@@ -1,5 +1,5 @@
 # **Prism: Pipeline for Research Imaging & Scalable ML**
-
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                     CONTROL (Streamlit)                     │
 │            (Dashboard + Experiment Tracking)                │
@@ -19,6 +19,7 @@
 │    - Raw: landing/    │     │   (Local MLflow +     │
 │    - Processed: lmdb/ │     │    S3 checkpoints)    │
 └───────────────────────┘     └───────────────────────┘
+```
 
 ---
 
