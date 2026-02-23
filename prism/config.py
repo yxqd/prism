@@ -18,7 +18,7 @@ REGION = os.environ.get("PRISM_REGION", "us-east-1")
 # S3 buckets
 BUCKET_LANDING = os.environ.get("PRISM_BUCKET_LANDING", "prism-landing")
 BUCKET_PROCESSED = os.environ.get("PRISM_BUCKET_PROCESSED", "prism-processed")
-BUCKET_MODELS = os.environ.get("PRISM_BUCKET_MODELS", "prism-models")
+BUCKET_MODELS = os.environ.get("PRISM_BUCKET_MODELS", "prism-model-collection")
 
 # MLflow (for later)
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "")

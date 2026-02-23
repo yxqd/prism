@@ -42,13 +42,13 @@ The goal is not a production platform but a deep understanding.
 **Environment & S3 Setup**
 - Create AWS account (or use localstack for mocking)
 - Set up project structure with Poetry/uv
-- Create S3 buckets via boto3 script: `prism-landing/`, `prism-processed/`, `prism-models/`
+- Create S3 buckets via boto3 script: `prism-landing/`, `prism-processed/`, `prism-model-collection/`
 
 **S3 Utilities**
 - `prism/storage/s3_client.py` — Wrapper around boto3 with retries, progress bars
 - `prism/storage/download.py` — Download prefix to local cache with concurrency
 - `prism/storage/upload.py` — Upload with multipart for large files  
-  **Use:** Push processed outputs to `prism-processed/`, checkpoints to `prism-models/`
+  **Use:** Push processed outputs to `prism-processed/`, checkpoints to `prism-model-collection/`
 - **Test:** Download 100+ images from a public dataset (COCO, ImageNet) to verify
 
 **Dataset Scanner & Metadata**
