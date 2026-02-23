@@ -15,4 +15,4 @@ uv sync                # or: poetry install
 - **Scan a prefix:** `uv run python scripts/ingest.py s3://your-bucket/prefix/`
 - Output: report of image count, corrupted count, average size; metadata JSONL in `prism-processed/metadata/`.
 
-See [vision_v2.md](vision_v2.md) for the full plan.
+See [vision.md](vision.md) for the full plan.
