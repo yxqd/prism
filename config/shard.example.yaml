@@ -1,0 +1,14 @@
+# Example shard config for: python scripts/shard_dataset.py --config config/shard.example.yaml
+# Override any field via CLI (e.g. --input, --shard-size).
+# Optional: upload_uri — after writing, upload each .tar to this S3 location; CLI --upload overrides.
+# Input may be a local path or S3 URI (s3://bucket/prefix/).
+
+input_root: data/tiny-imagenet-200
+# input_root: s3://prism-landing/tiny-imagenet-200/
+output_dir: data/sharded
+shard_size: 2000
+extensions: [jpg, jpeg, png]
+# If set, only this split is sharded (e.g. train or val). Omit to shard root recursively.
+splits: [train]
+# Optional: upload shards to S3 after writing (key = prefix + filename).
+upload_uri: s3://prism-processed/sharded/tiny-imagenet-200/train

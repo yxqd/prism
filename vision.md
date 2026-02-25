@@ -204,7 +204,10 @@ Dask is chosen for DAG visibility and scaling insight; for small local runs a `P
 - **FFCV integration:** Implement the ultra-fast FFCV format for comparison; document when FFCV vs LMDB wins (e.g. very large batches, GPU decoding)
 - **Distributed Dask:** Try a multi-node cluster on EC2
 - **More camera physics:** Add rolling shutter simulation, thermal noise
-- **WebDataset:** Implement sharded dataset format
+- **WebDataset / Sharded format:** Implement sharded dataset format
+
+**Shard experiment (tiny-imagenet-200)**  
+Use the local dataset `data/tiny-imagenet-200` (100k images) to validate a WebDataset-style sharding path: group images into 20–50 `.tar` shards (~2k images each) via Dask `bag → map_partitions → TarWriter`, so each Dask task has enough work to amortize scheduling overhead. Then load shards with `dask_image.imread` or `db.from_sequence(shard_paths).map(process_shard)`. To make this reusable we add: a small **sharding** module (path listing, partitioning, TarWriter per partition), a **script** (e.g. `scripts/shard_dataset.py`) for CLI-driven shard creation, optional **config** for paths and shard size, and **reader helpers** for Dask-based consumption. Detail plan: `sharding.md`.
 
 ---
 

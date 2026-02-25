@@ -1,0 +1,28 @@
+# Example pipeline config for: python scripts/run_workflow.py s3://... --pipeline config/pipeline.example.yaml
+# Steps run in order. Use seed for reproducible randomness in augment / camera effects.
+
+steps:
+  - name: resize
+    target_size: [224, 224]
+    maintain_aspect: true
+    pad: true
+  - name: normalize
+# Optional steps (uncomment to use):
+#  - name: augment
+#    flip_h: false
+#    flip_v: false
+#    rotate_deg: 0
+#    color_jitter:
+#      brightness: [0.9, 1.1]
+#      contrast: [0.9, 1.1]
+#    seed: 42
+#  - name: camera_noise
+#    gaussian_std: 0.02
+#    poisson_scale: 0.1
+#    seed: 42
+#  - name: lens_distortion
+#    k: -0.2
+#    seed: 42
+#  - name: vignetting
+#    strength: 0.4
+#    seed: 42
