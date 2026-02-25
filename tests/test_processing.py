@@ -11,6 +11,7 @@ import pytest
 
 from prism.processing.tasks import basic_augment, normalize, resize_image
 from prism.processing.pipeline import Pipeline, apply_pipeline, camera_noise, lens_distortion, vignetting
+from prism.processing.pipeline_config import pipeline_from_yaml
 from prism.processing.workflow import _load_checkpoint, _save_checkpoint
 
 
@@ -99,6 +100,32 @@ def test_checkpoint_round_trip(tmp_path: Path) -> None:
     empty = _load_checkpoint(tmp_path / "nonexistent.json")
     assert empty["downloaded_keys"] == []
     assert empty["processed_keys"] == []
+
+
+def test_pipeline_from_yaml(tmp_path: Path) -> None:
+    """Build pipeline from YAML dict and file; apply produces expected shape."""
+    config = {
+        "steps": [
+            {"name": "resize", "target_size": [32, 32], "maintain_aspect": True, "pad": True},
+            {"name": "normalize"},
+        ]
+    }
+    pipeline = pipeline_from_yaml(config)
+    arr = np.ones((64, 64, 3), dtype=np.uint8) * 128
+    out = pipeline.apply(arr)
+    assert out.shape == (32, 32, 3)
+    assert out.dtype == np.float32
+
+    yaml_path = tmp_path / "pipeline.yaml"
+    yaml_path.write_text(
+        "steps:\n"
+        "  - name: resize\n"
+        "    target_size: [16, 16]\n"
+        "  - name: normalize\n"
+    )
+    pipeline2 = pipeline_from_yaml(str(yaml_path))
+    out2 = pipeline2.apply(arr)
+    assert out2.shape == (16, 16, 3)
 
 
 def test_throughput_1000_images() -> None:
