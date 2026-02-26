@@ -18,22 +18,23 @@ Don't process 100,000 files individually. Instead, group them into ~50 shards of
 
 ---
 
-## 2. What to add for reusability
+## 2. What we have vs what’s left
 
 So that sharding works for tiny-imagenet-200 and any other image directory:
 
-| Layer | Purpose |
-|-------|--------|
-| **Module: path listing** | Collect image paths from a root (local dir or S3 prefix); filter by extension; optionally respect train/val split layout (e.g. class subdirs). |
-| **Module: partition + write** | Given a sequence of paths and shard size, partition into chunks and write each chunk with `TarWriter` to one `.tar`; support Dask `map_partitions` (one partition → one or more shards). |
-| **Module: shard reader** | Helpers to load shards: e.g. list shard paths from a directory/prefix, and either return paths for `db.from_sequence(...).map(process_shard)` or integrate with `dask_image` if applicable. |
-| **Script** | Single entrypoint: e.g. `scripts/shard_dataset.py` — input path, output path, shard size (or num shards), optional Dask workers; calls the modules above. |
-| **Config (optional)** | Small shard section in pipeline config or a dedicated shard config: input root, output dir, shard size, extensions, split (train/val). |
-| **Tests** | Unit tests for path listing, partition sizing, and “write one shard” logic; optional integration test with a tiny directory. |
+| Layer | Status | Purpose |
+|-------|--------|--------|
+| **Module: path listing** | **Implemented** (`prism/sharding/paths.py`) | Collect image paths from a root (local dir or S3 prefix); filter by extension; optionally respect train/val split layout (e.g. class subdirs). |
+| **Module: partition + write** | **Implemented** (`prism/sharding/writer.py`) | Given a sequence of paths and shard size, partition into chunks and write each chunk with `TarWriter` to one `.tar`. |
+| **Module: shard reader** | **Implemented** (`prism/sharding/reader.py`) | Helpers to load shards: list shard paths from an output directory and return paths for `dask.bag.from_sequence(...).map(process_shard)`. |
+| **Metadata manifest** | **Implemented** (`prism/sharding/metadata.py`) | Write Parquet manifest (`shard`, `sample_idx`, `__key__`, `cls`, `source`) for downstream consumers (including `workflow_sharded`). |
+| **Script** | **Planned** (`scripts/shard_dataset.py`) | Single entrypoint to drive sharding from CLI: input path/URI, output dir, shard size (or num shards), optional Dask workers; calls the modules above. |
+| **Config** | **Example present** (`config/shard.example.yaml`) | Example shard config: input root, output dir, shard size, extensions, splits, optional upload URI. CLI script should read this when implemented. |
+| **Tests** | **Implemented** (`tests/test_sharding.py`) | Unit tests for path listing, partition sizing, single/multi-shard write, and listing shards. |
 
 ---
 
-## 3. Detailed plan (no implementation yet)
+## 3. Detailed design and remaining TODOs
 
 ### 3.1 Path listing
 
@@ -53,7 +54,7 @@ So that sharding works for tiny-imagenet-200 and any other image directory:
   - Naming: `shard_00000.tar` vs `{split}_00000.tar` if we have train/val.
   - What to write inside each sample: at least image bytes; optionally sidecar (label, metadata) as separate keys in the same sample.
 
-### 3.3 Script: `scripts/shard_dataset.py`
+### 3.3 Script: `scripts/shard_dataset.py` (planned)
 
 - **CLI (proposed):**
   - `--input` (required): root directory (e.g. `data/tiny-imagenet-200` or `data/tiny-imagenet-200/train`).
@@ -71,13 +72,13 @@ So that sharding works for tiny-imagenet-200 and any other image directory:
 - **Dask Bag usage:** Document or wrap `db.from_sequence(shard_paths).map(process_shard)` with a simple `process_shard(tar_path)` that opens the tar and runs a user function on each sample.
 - **dask-image:** Document whether `dask_image.imread.imread('shards/*.tar')` works as-is or needs a small adapter; if adapter needed, add a thin helper.
 
-### 3.5 Config
+### 3.5 Config (example exists, wiring TODO)
 
 - Optional: add a `shard` section to pipeline config (or `config/shard.example.yaml`) with:
   - `input_root`, `output_dir`, `shard_size`, `extensions`, `splits` (e.g. `[train, val]`).
 - Script reads config when provided (e.g. `--config shard.yaml`) and overrides with CLI flags.
 
-### 3.6 Tests
+### 3.6 Tests (mostly done)
 
 - **Unit:**
   - Path lister: mock dir with a few class subdirs and images; assert count and extensions.
@@ -89,7 +90,7 @@ So that sharding works for tiny-imagenet-200 and any other image directory:
 
 - Add `webdataset` (and optionally `tensorboard` if we ever log; not required for this plan) to `pyproject.toml` if not already present.
 
-### 3.8 Order of implementation (when you do implement)
+### 3.8 Order of remaining implementation
 
 1. Path listing (pure function + tests).
 2. Single-shard write (TarWriter on a list of paths; tests).
@@ -100,16 +101,6 @@ So that sharding works for tiny-imagenet-200 and any other image directory:
 
 ---
 
-## 4. Implementation summary
+## 4. Implementation summary (current state)
 
-- **`prism/sharding/paths.py`** — `list_image_paths(root, extensions, split, with_labels)` for local dirs; `list_image_keys_from_s3(client, bucket, prefix, ...)` for S3 prefixes. Both exclude `*_boxes.txt` and `val_annotations.txt`; labels from path/key.
-- **`prism/sharding/writer.py`** — `write_one_shard(samples, out_path)` (local paths), `write_one_shard_from_s3(client, bucket, samples, out_path)` (S3 keys, streamed); `partition_paths` / `partition_keys`; `write_shards` / `write_shards_from_s3`; `write_shards_from_root`. WebDataset samples use `__key__`, `jpg`, and optional `cls`.
-- **`prism/sharding/metadata.py`** — `write_metadata_parquet(samples_with_labels, shard_size, output_dir, ...)` writes `output_dir/metadata/part.0.parquet` with columns `shard`, `shard_idx`, `sample_idx`, `__key__`, `cls`, `source`. With `--upload`, the script uploads this to `prefix/metadata/part.0.parquet` so you can load it with Dask: `dd.read_parquet("s3://my-bucket/prefix/metadata/")`.
-- **`prism/sharding/reader.py`** — `list_shards(output_dir)`, `shard_paths_for_dask(output_dir)` for `db.from_sequence(...).map(process_shard)`.
-- **`scripts/shard_dataset.py`** — `--input` may be a **local directory or S3 URI** (`s3://bucket/prefix/`). CLI: `--output`, `--shard-size` / `--num-shards`, `--split`, `--extensions`, `--config`, `--use-dask`, `--workers`. Optional S3 upload via `--upload s3://bucket/prefix/` or config `upload_uri`; after writing shards, each `.tar` is uploaded with key `prefix + filename` (use `--upload-progress` to show per-file progress).
-- **`config/shard.example.yaml`** — Example `input_root` (local or `s3://...`), `output_dir`, `shard_size`, `extensions`, `splits`; optional `upload_uri`.
-- **`tests/test_sharding.py`** — Unit tests for path listing, partitioning, single-shard write, multi-shard write, list_shards.
-
-Run: `python scripts/shard_dataset.py --input data/tiny-imagenet-200/train --output data/sharded --shard-size 2000`  
-S3 input: `python scripts/shard_dataset.py --input s3://prism-landing/tiny-imagenet-200/ --output data/sharded --split train`  
-After running with `--upload s3://my-bucket/prefix/`, load the metadata in Dask: `df = dd.read_parquet("s3://my-bucket/prefix/metadata/")` (columns: `shard`, `shard_idx`, `sample_idx`, `__key__`, `cls`, `source`).
+- **`prism/sharding/paths.py`** — `list_image_paths(root, extensions, split, with_labels)` for local dirs; `list_image_keys_from_s3(client, bucket, prefix, ...)` for S3 prefixes. Both exclude `*_boxes.txt` and `val_annotations.txt`; labels are derived from path/key.\n- **`prism/sharding/writer.py`** — `write_one_shard(samples, out_path)` (local paths), `write_one_shard_from_s3(client, bucket, samples, out_path)` (S3 keys, streamed); `partition_paths` / `partition_keys`; `write_shards` / `write_shards_from_s3`; `write_shards_from_root`. WebDataset samples use `__key__`, `jpg`, and optional `cls`.\n- **`prism/sharding/metadata.py`** — `write_metadata_parquet(samples_with_labels, shard_size, output_dir, ...)` writes `output_dir/metadata/part.0.parquet` with columns `shard`, `shard_idx`, `sample_idx`, `__key__`, `cls`, `source`. These manifests are what `prism/processing/workflow_sharded.py` expects when reading from S3.\n- **`prism/sharding/reader.py`** — `list_shards(output_dir)`, `shard_paths_for_dask(output_dir)` for `dask.bag.from_sequence(...).map(process_shard)`.\n- **`config/shard.example.yaml`** — Example config for a future `scripts/shard_dataset.py`: `input_root` (local or `s3://...`), `output_dir`, `shard_size`, `extensions`, `splits`, optional `upload_uri`.\n- **`tests/test_sharding.py`** — Unit tests for path listing, partitioning, single-shard write, multi-shard write, and listing shards.\n\n**Not yet implemented:** `scripts/shard_dataset.py` CLI and its `--upload` flow. The example commands at the bottom are design sketches, not working commands today.\n*** End Patch```}"/>
