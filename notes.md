@@ -10,3 +10,7 @@
   `$ python scripts/run_workflow.py s3://prism-landing/tiny-imagenet-200/train/n01443537/images/`
 * added sharding script
   `$ python scripts/shard_dataset.py --config config/shard.example.yaml`
+
+# 20260225
+* run sharded workflow
+  `$ python scripts/run_workflow.py s3://prism-processed/sharded/tiny-imagenet-200/train/ --sharded`
