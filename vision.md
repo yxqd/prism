@@ -1,4 +1,6 @@
-# **Prism: Pipeline for Research Imaging & Scalable ML**
+# **Toy Project: Prism - Pipeline for Research Imaging & Scalable ML**
+Goal: learn about challenges in image ML pipeline to support both research and scalable production deployment
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     CONTROL (Streamlit)                     │
