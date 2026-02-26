@@ -1,5 +1,5 @@
 # Prism
-Toy project to learn about challenges in image ML pipeline to support both research and scalable production deployment.
+Toy project to learn about challenges in image ML data pipeline to support both research and scalable production deployment.
 
 **ingest → process → store → train → profile**
 
