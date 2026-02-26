@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Run S3 pull -> process -> push workflow. Optional Dask for distributed processing.
+"""Run S3 pull -> process -> push workflow. Optional Dask. Supports sharded (metadata + .tar) source.
 
 Usage:
   python scripts/run_workflow.py s3://prism-landing/my-dataset/
-  python scripts/run_workflow.py --bucket prism-landing --prefix my-dataset/ --no-dask
-  python scripts/run_workflow.py s3://prism-landing/my-dataset/ --pipeline config/pipeline.yaml
+  python scripts/run_workflow.py s3://prism-processed/sharded/train/  # auto-detects sharded if metadata/ + .tar present
+  python scripts/run_workflow.py s3://prism-processed/sharded/train/ --sharded  # force sharded
+  python scripts/run_workflow.py s3://prism-landing/my-dataset/ --no-dask --pipeline config/pipeline.yaml
 
-Resume: Re-run the same bucket/prefix to resume from checkpoint (download missing, process remaining).
-Start fresh: Delete the checkpoint under PRISM_CACHE_DIR/workflow/<job_id>/workflow_checkpoint.json
-Dashboard: When using Dask, open http://localhost:8787 for DAG and task stream.
+Resume: Re-run the same bucket/prefix to resume from checkpoint.
+Sharded: Loads metadata from prefix/metadata/*.parquet, processes samples from .tar shards, checkpoint by __key__.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ def main() -> int:
     parser.add_argument("--bucket", default=None, help="S3 bucket (overrides URI)")
     parser.add_argument("--prefix", default="", help="S3 prefix (overrides URI)")
     parser.add_argument("--no-dask", action="store_true", help="Run processing sequentially (no Dask)")
+    parser.add_argument("--sharded", action="store_true", help="Source is sharded (metadata + .tar on S3); auto-detected if not set")
+    parser.add_argument("--no-sharded", action="store_true", help="Do not use sharded path even if metadata + .tar found")
     parser.add_argument("--pipeline", metavar="YAML", default=None, help="Path to YAML pipeline config (default: resize + normalize)")
     parser.add_argument("--target-size", type=int, nargs=2, default=[224, 224], metavar=("H", "W"), help="Resize target when not using --pipeline (default: 224 224)")
     args = parser.parse_args()
@@ -65,6 +67,7 @@ def main() -> int:
             pipeline=pipeline,
             use_dask=False,
             show_progress=True,
+            source_is_sharded=True if args.sharded else (False if args.no_sharded else None),
         )
     else:
         with create_local_cluster() as (client, _cluster):
@@ -75,6 +78,7 @@ def main() -> int:
                 use_dask=True,
                 dask_client=client,
                 show_progress=True,
+                source_is_sharded=True if args.sharded else (False if args.no_sharded else None),
             )
 
     print_timing_summary(timings)

@@ -53,6 +53,9 @@ def _save_checkpoint(checkpoint_path: Path, data: Dict[str, Any]) -> None:
         json.dump(data, f, indent=2)
 
 
+from prism.processing.workflow_sharded import run_workflow_sharded, source_is_sharded as detect_source_sharded
+
+
 def run_workflow(
     source_bucket: str,
     source_prefix: str,
@@ -65,14 +68,16 @@ def run_workflow(
     dask_client: Optional[Any] = None,
     max_download_workers: int = 8,
     show_progress: bool = True,
+    source_is_sharded: Optional[bool] = None,
+    progress_chunk_size: int = 100,
 ) -> Dict[str, float]:
     """Pull from S3, run pipeline on each image, push to S3. Returns timing dict.
 
-    Checkpoint is written under cache_dir so that on crash you can re-run and resume
-    (download missing, process remaining). Delete checkpoint to start fresh.
+    If source_is_sharded is True (or auto-detected: metadata/*.parquet and *.tar under prefix),
+    loads the Parquet manifest and processes samples from sharded .tar files. Checkpoint tracks
+    processed sample __key__s. Otherwise treats prefix as flat image keys.
 
-    If use_dask and dask_client are set, processing is distributed via Dask;
-    otherwise processing is sequential.
+    Checkpoint is written under cache_dir so that on crash you can re-run and resume.
     """
     cache_dir = cache_dir or config.CACHE_DIR
     dest_bucket = dest_bucket or config.BUCKET_PROCESSED
@@ -84,8 +89,25 @@ def run_workflow(
     download_dir = work_dir / "download"
     processed_dir = work_dir / "processed"
     checkpoint_path = work_dir / CHECKPOINT_FILENAME
-
     timings: Dict[str, float] = {}
+
+    use_sharded = source_is_sharded if source_is_sharded is not None else detect_source_sharded(client, source_bucket, source_prefix)
+    if use_sharded:
+        return run_workflow_sharded(
+            source_bucket=source_bucket,
+            source_prefix=source_prefix,
+            pipeline=pipeline,
+            work_dir=work_dir,
+            checkpoint_path=checkpoint_path,
+            dest_bucket=dest_bucket,
+            dest_prefix=dest_prefix,
+            client=client,
+            use_dask=use_dask,
+            dask_client=dask_client,
+            timings=timings,
+            show_progress=show_progress,
+            progress_chunk_size=progress_chunk_size,
+        )
 
     # List keys (image extensions only)
     keys_sizes = list_objects_under_prefix(
