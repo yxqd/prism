@@ -14,3 +14,6 @@
 # 20260225
 * run sharded workflow
   `$ python scripts/run_workflow.py s3://prism-processed/sharded/tiny-imagenet-200/train/ --sharded`
+
+This I/O peaks come from writing shards to s3. Should try making it smoother with overlapping of I/O and compute.
+<img width="1904" height="968" alt="image" src="https://github.com/user-attachments/assets/3f729c58-1442-460b-a79b-0dfa14f61eb5" />
