@@ -3,6 +3,10 @@ Toy project to learn about challenges in image ML pipeline to support both resea
 
 **ingest → process → store → train → profile**
 
+## Vision and plan
+
+See [vision.md](vision.md) for the full roadmap (LMDB, PyTorch DataLoader, synthetic data, dashboard, etc.). Sharding experiment detail: [sharding.md](sharding.md).
+
 ## Setup
 
 ```bash
@@ -79,7 +83,3 @@ See [sharding.md](sharding.md) for the full sharding plan and script ideas (`sha
 ```bash
 uv run pytest tests/ -v
 ```
-
-## Vision and plan
-
-See [vision.md](vision.md) for the full roadmap (LMDB, PyTorch DataLoader, synthetic data, dashboard, etc.). Sharding experiment detail: [sharding.md](sharding.md).
