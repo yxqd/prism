@@ -20,6 +20,10 @@ dependencies = [
     "scipy>=1.10.0",
     "tqdm>=4.66.0",
     "webdataset>=0.2.0",
+    "nvidia-dali-cuda120",
+    "ray[default]",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +31,10 @@ dev = [
     "pytest>=7.0.0",
     "moto[s3]>=4.2.0",
 ]
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
 
 [tool.hatch.build.targets.wheel]
 packages = ["prism"]

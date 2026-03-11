@@ -156,6 +156,14 @@ Dask is chosen for DAG visibility and scaling insight; for small local runs a `P
 - Output: Recommended config for our hardware/dataset
 - **Deliverable:** "For this dataset on an r5.2xlarge, optimal config: num_workers=12, prefetch_factor=4, pin_memory=True yields 8,500 images/sec"
 
+**GPU-native Data Pipeline (NVIDIA DALI)**
+- Add a DALI-based input pipeline as an alternative to the standard PyTorch `DataLoader`
+- Start simple: read images from LMDB or raw files, apply GPU-side decode/augment, and feed into PyTorch via `nvidia.dali.pytorch`
+- Reuse `prism/torch/profiler.py` to compare:
+  - GPU idle time (PyTorch DataLoader vs DALI)
+  - Images/sec throughput and CPU utilization
+- **Deliverable:** "On this dataset/hardware, DALI reduces GPU idle from X% → Y% and increases images/sec from A → B"
+
 **Minimal Training Script**
 - `scripts/train_demo.py` — One small model (e.g. ResNet classifier on a tiny dataset), one or a few epochs
   - Logs to MLflow (dataset version, DataLoader config, metrics)
@@ -207,6 +215,7 @@ Dask is chosen for DAG visibility and scaling insight; for small local runs a `P
 - **Distributed Dask:** Try a multi-node cluster on EC2
 - **More camera physics:** Add rolling shutter simulation, thermal noise
 - **WebDataset / Sharded format:** Implement sharded dataset format
+- **Ray + DALI training experiment:** Use Ray (e.g. Ray Train/Ray AIR) to orchestrate multi-GPU training jobs where each worker uses the DALI pipeline; compare end-to-end throughput and GPU utilization against the tuned PyTorch DataLoader baseline, and document where Ray-style orchestration is preferable to Dask in this project.
 
 **Shard experiment (tiny-imagenet-200)**  
 Use the local dataset `data/tiny-imagenet-200` (100k images) to validate a WebDataset-style sharding path: group images into 20–50 `.tar` shards (~2k images each) via Dask `bag → map_partitions → TarWriter`, so each Dask task has enough work to amortize scheduling overhead. Then load shards with `dask_image.imread` or `db.from_sequence(shard_paths).map(process_shard)`. To make this reusable we add: a small **sharding** module (path listing, partitioning, TarWriter per partition), a **script** (e.g. `scripts/shard_dataset.py`) for CLI-driven shard creation, optional **config** for paths and shard size, and **reader helpers** for Dask-based consumption. Detail plan: `sharding.md`.
