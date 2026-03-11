@@ -24,6 +24,7 @@ dependencies = [
     "ray[default]",
     "torch>=2.0.0",
     "torchvision>=0.15.0",
+    "nvidia-ml-py>=11.0.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,15 @@ dev = [
 [[tool.uv.index]]
 name = "nvidia"
 url = "https://pypi.nvidia.com"
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
+torchvision = { index = "pytorch-cuda" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["prism"]
