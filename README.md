@@ -22,6 +22,7 @@ uv sync                # or: poetry install
 - **Scan a prefix:** `uv run python scripts/ingest.py s3://your-bucket/prefix/`  
   Output: image count, corrupted count, average size; metadata JSONL in `prism-processed/metadata/`.
 - **Storage:** `prism/storage/` — S3 client, download (single and prefix), upload (single and bytes).
+- **Metadata registry:** `prism/dataset/registry.py` — append each scan to a small JSON registry in S3 so you can see recent runs.
 
 ### Processing workflow
 
@@ -63,7 +64,31 @@ uv run python scripts/run_workflow.py s3://... --no-dask --pipeline config/pipel
 - **Metadata:** `prism/sharding/metadata.py` — write Parquet manifest (`shard`, `sample_idx`, `__key__`, `cls`, `source`) for Dask/consumers.
 - **Reader:** `prism/sharding/reader.py` — list shards, paths for Dask.
 
-See [sharding.md](sharding.md) for the full sharding plan and script ideas (`shard_dataset.py`, config).
+- **CLI:** `scripts/shard_dataset.py` — shard a local directory or S3 prefix into WebDataset `.tar` files, optionally using Dask and uploading shards + metadata back to S3. See `config/shard.example.yaml` for configuration.
+
+See [sharding.md](sharding.md) for the full sharding plan and configuration details.
+
+### LMDB datasets
+
+- **Writer:** `prism/storage/lmdb_writer.py` — write an LMDB dataset from `(image_path, class_index)` samples, plus a JSON `manifest.json` with counts, label mapping, and provenance.
+- **Reader:** `prism/storage/lmdb_reader.py` — random-access reader over the LMDB dataset, with manifest loading and simple iteration.
+- **CLI conversion:** `scripts/convert.py` — convert an ImageFolder-style directory into an LMDB dataset:
+
+  ```bash
+  uv run python scripts/convert.py --input-dir data/tiny-imagenet-200/train --output-dir data/lmdb/train
+  ```
+
+  The manifest includes `num_classes` and a stable `label_to_index` mapping.
+
+### PyTorch + DALI training demo
+
+- **PyTorch Dataset over LMDB:** `prism/torch/lmdb_dataset.py` — `LMDBDataset` that decodes images from LMDB and applies transforms, exposing `(image, label)` for `DataLoader`.
+- **DALI WebDataset pipeline:** `prism/torch/dali_pipeline.py` — single-GPU DALI pipeline and `create_webdataset_dali_iterator()` over WebDataset `.tar` shards with ImageNet-style augmentation and normalization.
+- **Training script:** `scripts/train_demo.py` — minimal ResNet18 training loop with three loader modes:
+  - `pytorch`: `torchvision.datasets.ImageFolder` over a directory.
+  - `lmdb`: `LMDBDataset` created via `scripts/convert.py`.
+  - `dali-webdataset`: DALI iterator over WebDataset shards (CUDA only).
+  Reports images/sec, loss, and optional GPU utilization/memory CSV for profiling.
 
 ### Checkpoints
 
