@@ -136,13 +136,29 @@ def main() -> int:
         if not input_root.is_dir():
             print(f"Input directory not found: {input_root}", file=sys.stderr)
             return 1
-
         paths_with_labels = list_image_paths(input_root, extensions=extensions, split=split, with_labels=True)
         samples_for_metadata = paths_with_labels
         total = len(paths_with_labels)
         if total == 0:
             print("No images found.", file=sys.stderr)
             return 1
+
+        # Map string class labels to stable integer indices for WebDataset `cls`.
+        from typing import Dict
+
+        label_to_index: Dict[str, int] = {}
+        next_idx = 0
+
+        def _to_index(lbl: Optional[str]) -> Optional[int]:
+            nonlocal next_idx
+            if lbl is None:
+                return None
+            if lbl not in label_to_index:
+                label_to_index[lbl] = next_idx
+                next_idx += 1
+            return label_to_index[lbl]
+
+        indexed_paths = [(p, _to_index(lbl)) for p, lbl in paths_with_labels]
 
         if num_shards_arg is not None:
             shard_size = max(1, math.ceil(total / num_shards_arg))
@@ -155,7 +171,7 @@ def main() -> int:
             import dask.bag as db
             from dask.distributed import Client as DaskClient, LocalCluster
 
-            chunks = list(partition_paths(paths_with_labels, shard_size))
+            chunks = list(partition_paths(indexed_paths, shard_size))
             cluster = LocalCluster(n_workers=args.workers, threads_per_worker=1)
             dask_client = DaskClient(cluster)
             try:
@@ -174,7 +190,7 @@ def main() -> int:
         else:
             written_paths = [
                 str(p) for p in write_shards(
-                    paths_with_labels,
+                    indexed_paths,
                     output_dir,
                     shard_size,
                     shard_prefix=shard_prefix,

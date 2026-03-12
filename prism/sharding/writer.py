@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
+import struct
 import webdataset as wds
 
 from prism.sharding.paths import list_image_paths
@@ -13,7 +14,7 @@ from prism.sharding.paths import list_image_paths
 IMAGE_KEY = "jpg"
 
 
-def _sample_from_path(path: Path, label: Optional[str], index: int) -> dict:
+def _sample_from_path(path: Path, label: Optional[int], index: int) -> dict:
     """Build a WebDataset sample dict from a single image path."""
     key = path.stem if path.stem else f"{index:06d}"
     sample: dict = {
@@ -21,22 +22,24 @@ def _sample_from_path(path: Path, label: Optional[str], index: int) -> dict:
         IMAGE_KEY: path.read_bytes(),
     }
     if label is not None:
-        sample["cls"] = label
+        # Store numeric class index as fixed-width 4-byte little-endian int.
+        # This matches DALI's recommendation (struct.pack + dtypes=INT32).
+        sample["cls"] = struct.pack("i", int(label))
     return sample
 
 
-def _sample_from_s3_key(body: bytes, key_str: str, label: Optional[str], index: int) -> dict:
+def _sample_from_s3_key(body: bytes, key_str: str, label: Optional[int], index: int) -> dict:
     """Build a WebDataset sample dict from S3 object body and key/label."""
     stem = key_str.rsplit("/", 1)[-1].rsplit(".", 1)[0] if "." in key_str else key_str.rsplit("/", 1)[-1]
     sample_key = stem if stem else f"{index:06d}"
     sample: dict = {"__key__": sample_key, IMAGE_KEY: body}
     if label is not None:
-        sample["cls"] = label
+        sample["cls"] = struct.pack("i", int(label))
     return sample
 
 
 def write_one_shard(
-    samples: List[Tuple[Path, Optional[str]]],
+    samples: List[Tuple[Path, Optional[int]]],
     out_path: Path,
 ) -> int:
     """Write one .tar shard from a list of (path, label) pairs. Returns number of samples written."""
@@ -55,7 +58,7 @@ def write_one_shard(
 def write_one_shard_from_s3(
     client: Any,
     bucket: str,
-    samples: List[Tuple[str, Optional[str]]],
+    samples: List[Tuple[str, Optional[int]]],
     out_path: Path,
 ) -> int:
     """Write one .tar shard from (s3_key, label) pairs by streaming from S3. Returns number of samples written."""
@@ -72,7 +75,7 @@ def write_one_shard_from_s3(
 
 
 def partition_paths(
-    paths_with_labels: List[Tuple[Path, Optional[str]]],
+    paths_with_labels: List[Tuple[Path, Optional[int]]],
     shard_size: int,
 ) -> Iterator[List[Tuple[Path, Optional[str]]]]:
     """Yield chunks of (path, label) of size shard_size (last chunk may be smaller)."""
@@ -81,7 +84,7 @@ def partition_paths(
 
 
 def partition_keys(
-    keys_with_labels: List[Tuple[str, Optional[str]]],
+    keys_with_labels: List[Tuple[str, Optional[int]]],
     shard_size: int,
 ) -> Iterator[List[Tuple[str, Optional[str]]]]:
     """Yield chunks of (key, label) of size shard_size (last chunk may be smaller)."""
@@ -90,7 +93,7 @@ def partition_keys(
 
 
 def write_shards(
-    paths_with_labels: List[Tuple[Path, Optional[str]]],
+    paths_with_labels: List[Tuple[Path, Optional[int]]],
     output_dir: Path,
     shard_size: int,
     *,
@@ -125,7 +128,23 @@ def write_shards_from_s3(
     output_dir.mkdir(parents=True, exist_ok=True)
     prefix = split_name or shard_prefix
     written: List[Path] = []
-    for shard_idx, chunk in enumerate(partition_keys(keys_with_labels, shard_size)):
+    # Map string labels to stable integer indices.
+    label_to_index: Dict[str, int] = {}
+    next_idx = 0
+
+    def _to_index(lbl: Optional[str]) -> Optional[int]:
+        nonlocal next_idx
+        if lbl is None:
+            return None
+        if lbl not in label_to_index:
+            label_to_index[lbl] = next_idx
+            next_idx += 1
+        return label_to_index[lbl]
+
+    indexed_keys: List[Tuple[str, Optional[int]]] = [
+        (k, _to_index(lbl)) for k, lbl in keys_with_labels
+    ]
+    for shard_idx, chunk in enumerate(partition_keys(indexed_keys, shard_size)):
         name = f"{prefix}_{shard_idx:05d}.tar"
         out_path = output_dir / name
         write_one_shard_from_s3(client, bucket, chunk, out_path)
@@ -146,9 +165,25 @@ def write_shards_from_root(
     paths_with_labels = list_image_paths(root, extensions=extensions, split=split, with_labels=True)
     if not paths_with_labels:
         return [], 0
+    # Map string labels (e.g. class directory names) to stable integer indices.
+    label_to_index: Dict[str, int] = {}
+    next_idx = 0
+
+    def _to_index(lbl: Optional[str]) -> Optional[int]:
+        nonlocal next_idx
+        if lbl is None:
+            return None
+        if lbl not in label_to_index:
+            label_to_index[lbl] = next_idx
+            next_idx += 1
+        return label_to_index[lbl]
+
+    indexed_samples: List[Tuple[Path, Optional[int]]] = [
+        (p, _to_index(lbl)) for p, lbl in paths_with_labels
+    ]
     split_name = split if split else None
     written = write_shards(
-        paths_with_labels,
+        indexed_samples,
         output_dir,
         shard_size,
         shard_prefix=shard_prefix,
