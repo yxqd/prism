@@ -25,6 +25,7 @@ dependencies = [
     "torch>=2.0.0",
     "torchvision>=0.15.0",
     "nvidia-ml-py>=11.0.0",
+    "lmdb>=1.4.0",
 ]
 
 [project.optional-dependencies]

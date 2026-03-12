@@ -4,9 +4,14 @@
 Uses ImageFolder + CPU transforms and a small ResNet. Run for a few epochs
 and report images/sec and loss so you can compare later with a DALI-backed loader.
 
+Loaders:
+  pytorch          ImageFolder from --data-dir (default)
+  lmdb            LMDB dataset from --lmdb-path (create with scripts/convert.py)
+  dali-webdataset WebDataset shards via DALI (requires CUDA)
+
 Usage:
   uv run python scripts/train_demo.py --data-dir data/tiny-imagenet-200
-  uv run python scripts/train_demo.py --data-dir data/tiny-imagenet-200 --epochs 2 --batch-size 64 --max-steps 500
+  uv run python scripts/train_demo.py --loader lmdb --lmdb-path data/lmdb/train --epochs 2 --max-steps 500
   uv run python scripts/train_demo.py --data-dir data/tiny-imagenet-200 --epochs 2 --batch-size 64 --max-steps 500 --gpu-metrics-csv logs/gpu_metrics.csv
 """
 
@@ -34,6 +39,7 @@ from torchvision.datasets import ImageFolder
 from torchvision.models import resnet18
 
 from prism.torch.dali_pipeline import create_webdataset_dali_iterator
+from prism.torch.lmdb_dataset import LMDBDataset
 
 
 # ImageNet normalization (standard for pretrained ResNet and similar)
@@ -101,9 +107,15 @@ def main() -> int:
     )
     parser.add_argument(
         "--loader",
-        choices=["pytorch", "dali-webdataset"],
+        choices=["pytorch", "lmdb", "dali-webdataset"],
         default="pytorch",
         help="Which data pipeline to use (default: pytorch ImageFolder).",
+    )
+    parser.add_argument(
+        "--lmdb-path",
+        type=Path,
+        default=Path("data/lmdb/train"),
+        help="Path to LMDB dataset directory (when --loader=lmdb). Create with scripts/convert.py.",
     )
     parser.add_argument(
         "--webdataset-dir",
@@ -115,7 +127,7 @@ def main() -> int:
         "--num-classes",
         type=int,
         default=200,
-        help="Number of classes (Tiny-ImageNet has 200). Used when --loader=dali-webdataset.",
+        help="Number of classes. Used when --loader=dali-webdataset (default 200 for Tiny-ImageNet).",
     )
     parser.add_argument("--epochs", type=int, default=2, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
@@ -158,7 +170,30 @@ def main() -> int:
         print("DALI WebDataset loader requires a CUDA device. Use --device cuda.", file=sys.stderr)
         return 1
 
-    if args.loader == "pytorch":
+    if args.loader == "lmdb":
+        lmdb_path = args.lmdb_path.resolve()
+        if not lmdb_path.is_dir():
+            print(f"Error: LMDB path is not a directory: {lmdb_path}", file=sys.stderr)
+            return 1
+        transform = get_train_transforms()
+        dataset = LMDBDataset(lmdb_path, transform=transform)
+        if len(dataset) == 0:
+            print("Error: LMDB dataset is empty.", file=sys.stderr)
+            return 1
+        num_classes = dataset.manifest.get("num_classes")
+        if num_classes is None:
+            label_to_index = dataset.manifest.get("label_to_index") or {}
+            num_classes = len(label_to_index) or 200
+        num_classes = int(num_classes)
+        data_iter = DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=(device.type == "cuda"),
+            persistent_workers=(args.num_workers > 0),
+        )
+    elif args.loader == "pytorch":
         # Resolve dataset root: data_dir/train if present, else data_dir
         data_dir = args.data_dir.resolve()
         train_root = data_dir / args.train_subdir
@@ -209,7 +244,7 @@ def main() -> int:
     start_wall = time.perf_counter()
 
     for epoch in range(args.epochs):
-        if args.loader == "pytorch":
+        if args.loader in ("pytorch", "lmdb"):
             epoch_iter = enumerate(data_iter)
         else:
             # DALI iterator yields a list of outputs per pipeline; use index 0.
@@ -219,7 +254,7 @@ def main() -> int:
             if args.max_steps is not None and step_count >= args.max_steps:
                 break
 
-            if args.loader == "pytorch":
+            if args.loader in ("pytorch", "lmdb"):
                 images, targets = batch
             else:
                 # DALIClassificationIterator returns [ {'data': tensor, 'label': tensor}, ... ]
